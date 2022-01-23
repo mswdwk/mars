@@ -19,6 +19,11 @@
 #include "../platform_comm.h"
 
 #include <jni.h>
+#ifdef ANDROID
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
 
 #include "../xlogger/xlogger.h"
 #include "util/comm_function.h"
@@ -33,6 +38,22 @@
 #include "mars/comm/coroutine/coroutine.h"
 #include "mars/comm/coroutine/coro_async.h"
 
+namespace mars {
+namespace comm {
+
+static std::function<bool(std::string&)> g_new_wifi_id_cb;
+static mars::comm::Mutex wifi_id_mutex;
+
+void SetWiFiIdCallBack(std::function<bool(std::string&)> _cb) {
+    mars::comm::ScopedLock lock(wifi_id_mutex);
+    g_new_wifi_id_cb = _cb;
+}
+void ResetWiFiIdCallBack() {
+    mars::comm::ScopedLock lock(wifi_id_mutex);
+    g_new_wifi_id_cb = NULL;
+}
+
+
 #ifdef ANDROID
 	int g_NetInfo = 0;    // global cache netinfo for android
 	WifiInfo g_wifi_info;
@@ -44,18 +65,18 @@
 DEFINE_FIND_CLASS(KPlatformCommC2Java, "com/tencent/mars/comm/PlatformComm$C2Java")
 
 #ifdef ANDROID
-DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_startAlarm, KPlatformCommC2Java, "startAlarm", "(II)Z")
-bool startAlarm(int64_t id, int after) {
+DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_startAlarm, KPlatformCommC2Java, "startAlarm", "(III)Z")
+bool startAlarm(int type, int64_t id, int after) {
     xverbose_function();
     
     if (coroutine::isCoroutine())
-        return coroutine::MessageInvoke(boost::bind(&startAlarm, id, after));
+        return coroutine::MessageInvoke(boost::bind(&startAlarm, type, id, after));
     
     VarCache* cacheInstance = VarCache::Singleton();
     ScopeJEnv scopeJEnv(cacheInstance->GetJvm());
     JNIEnv* env = scopeJEnv.GetEnv();
-    jboolean ret = JNU_CallStaticMethodByMethodInfo(env, KPlatformCommC2Java_startAlarm, (jint)id, (jint)after).z;
-    xdebug2(TSF"id= %0, after= %1, ret= %2", id, after, (bool)ret);
+    jboolean ret = JNU_CallStaticMethodByMethodInfo(env, KPlatformCommC2Java_startAlarm, (jint)type, (jint)id, (jint)after).z;
+    xdebug2(TSF"id= %0, after= %1, type= %2, ret= %3", id, after, type, (bool)ret);
     return (bool)ret;
 }
 
@@ -130,11 +151,11 @@ DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_getNetInfo, KPlatformCommC2Java, "
 int getNetInfo() {
 	xverbose_function();
 
-    if (g_NetInfo != 0)
-        return g_NetInfo;
+    // if (g_NetInfo != 0 && g_NetInfo != kNoNet)
+    //     return g_NetInfo;
     
-    if (coroutine::isCoroutine())
-        return coroutine::MessageInvoke(&getNetInfo);
+    // if (coroutine::isCoroutine())
+    //     return coroutine::MessageInvoke(&getNetInfo);
 
     VarCache* cacheInstance = VarCache::Singleton();
     ScopeJEnv scopeJEnv(cacheInstance->GetJvm());
@@ -147,88 +168,66 @@ int getNetInfo() {
     return (int)netType;
 }
 
-DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_getCurRadioAccessNetworkInfo, KPlatformCommC2Java, "getCurRadioAccessNetworkInfo", "()I")
-bool getCurRadioAccessNetworkInfo(RadioAccessNetworkInfo& _raninfo) {
+DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_getStatisticsNetType, KPlatformCommC2Java, "getStatisticsNetType", "()I")
+int getNetTypeForStatistics(){
     xverbose_function();
 
-    if (coroutine::isCoroutine())
-        return coroutine::MessageInvoke(boost::bind(&getCurRadioAccessNetworkInfo, boost::ref(_raninfo)));
-    
     VarCache* cacheInstance = VarCache::Singleton();
     ScopeJEnv scopeJEnv(cacheInstance->GetJvm());
     JNIEnv* env = scopeJEnv.GetEnv();
 
-    jint netType = JNU_CallStaticMethodByMethodInfo(env, KPlatformCommC2Java_getCurRadioAccessNetworkInfo).i;
+    return (int)JNU_CallStaticMethodByMethodInfo(env, KPlatformCommC2Java_getStatisticsNetType).i;
+}
 
-    xverbose2(TSF"netInfo= %0", netType);
+DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_getCurRadioAccessNetworkInfo, KPlatformCommC2Java, "getCurRadioAccessNetworkInfo", "()I")
+bool getCurRadioAccessNetworkInfo(RadioAccessNetworkInfo& _raninfo) {
+    xverbose_function();
+    int netType = getNetTypeForStatistics(); // change interface calling to "getNetTypeForStatistics", because of Android's network info method calling restrictions
 
-    switch ((int)netType) {
+
+    /**
+        NETTYPE_NOT_WIFI = 0;
+        NETTYPE_WIFI = 1;
+        NETTYPE_WAP = 2;
+        NETTYPE_2G = 3;
+        NETTYPE_3G = 4;
+        NETTYPE_4G = 5;
+        NETTYPE_UNKNOWN = 6;	
+        NETTYPE_5G = 7;
+        NETTYPE_NON = -1;
+    **/
+
+    switch (netType) {
+    case -1:
     case 0:
+    case 6:
         break;
-
     case 1:
-        _raninfo.radio_access_network = GPRS;
+        _raninfo.radio_access_network = WIFI;
         break;
 
     case 2:
-        _raninfo.radio_access_network = Edge;
-        break;
-
     case 3:
-        _raninfo.radio_access_network = UMTS;
+        _raninfo.radio_access_network = GPRS;
         break;
 
     case 4:
-        _raninfo.radio_access_network = CDMA;
+        _raninfo.radio_access_network = WCDMA;
         break;
 
     case 5:
-        _raninfo.radio_access_network = CDMAEVDORev0;
-        break;
-
-    case 6:
-        _raninfo.radio_access_network = CDMAEVDORevA;
-        break;
-
-    case 7:
-        _raninfo.radio_access_network = CDMA1x;
-        break;
-
-    case 8:
-        _raninfo.radio_access_network = HSDPA;
-        break;
-
-    case 9:
-        _raninfo.radio_access_network = HSUPA;
-        break;
-
-    case 10:
-        _raninfo.radio_access_network = HSPA;
-        break;
-
-    case 11:
-        _raninfo.radio_access_network = IDEN;
-        break;
-
-    case 12:
-        _raninfo.radio_access_network = CDMAEVDORevB;
-        break;
-
-    case 13:
         _raninfo.radio_access_network = LTE;
         break;
 
-    case 14:
-        _raninfo.radio_access_network = eHRPD;
-        break;
-
-    case 15:
-        _raninfo.radio_access_network = HSPAP;
+    case 7: 
+        // _raninfo.radio_access_network = G5;  // consider it to "4G" though it may be real "5G".
+        _raninfo.radio_access_network = LTE;
         break;
 
     default:
         break;
     }
+    xverbose2(TSF"netInfo= %0, %1", netType, _raninfo.radio_access_network);
 
     return !_raninfo.radio_access_network.empty();
 }
@@ -237,16 +236,16 @@ bool getCurRadioAccessNetworkInfo(RadioAccessNetworkInfo& _raninfo) {
 
 DEFINE_FIND_STATIC_METHOD(KPlatformCommC2Java_getCurWifiInfo, KPlatformCommC2Java,
                           "getCurWifiInfo", "()Lcom/tencent/mars/comm/PlatformComm$WifiInfo;")
-bool getCurWifiInfo(WifiInfo& wifiInfo) {
+bool getCurWifiInfo(WifiInfo& wifiInfo, bool _force_refresh) {
     xverbose_function();
 
-    if (!g_wifi_info.ssid.empty()) {
+    if (!_force_refresh && !g_wifi_info.ssid.empty()) {
     	wifiInfo = g_wifi_info;
     	return true;
     }
 
     if (coroutine::isCoroutine())
-        return coroutine::MessageInvoke(boost::bind(&getCurWifiInfo, boost::ref(wifiInfo)));
+        return coroutine::MessageInvoke(boost::bind(&getCurWifiInfo, boost::ref(wifiInfo), _force_refresh));
                                         
     VarCache* cacheInstance = VarCache::Singleton();
     ScopeJEnv scopeJEnv(cacheInstance->GetJvm());
@@ -516,6 +515,28 @@ bool  wakeupLock_IsLocking(void* _object) {
     return (bool)ret;
 }
 
+#ifdef ANDROID
+std::string GetCurrentProcessName(){
+    static std::string cmdline;
+    if (!cmdline.empty())   
+        return cmdline;
+    
+    int fd = open("/proc/self/cmdline", O_RDONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
+    if (fd < 0) 
+        return cmdline;
+
+    char szcmdline[128] = {0};
+    if (read(fd, &szcmdline[0], sizeof(szcmdline) - 1) > 0){
+        size_t bytes = strlen(szcmdline);
+        cmdline.assign(szcmdline, bytes);
+    }
+    close(fd);
+    return cmdline;
+}
+#endif
+
+}
+}
 #endif
 
 

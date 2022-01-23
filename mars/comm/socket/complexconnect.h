@@ -27,13 +27,13 @@
 #include "unix_socket.h"
 #include "comm_data.h"
 
-class SocketBreaker;
 class socket_address;
 class AutoBuffer;
 
-#ifdef COMPLEX_CONNECT_NAMESPACE
-namespace COMPLEX_CONNECT_NAMESPACE {
-#endif
+namespace mars {
+namespace comm {
+
+class SocketBreaker;
 
 class MComplexConnect {
   public:
@@ -46,16 +46,21 @@ class MComplexConnect {
     virtual bool OnShouldVerify(unsigned int _index, const socket_address& _addr) { return false;}
     virtual bool OnVerifySend(unsigned int _index, const socket_address& _addr, SOCKET _socket, AutoBuffer& _buffer_send) { return false;}
     virtual bool OnVerifyRecv(unsigned int _index, const socket_address& _addr, SOCKET _socket, const AutoBuffer& _buffer_recv) { return false;}
-    virtual void OnVerifyTimeout(int _usedtime) {}
+    virtual void OnVerifyTimeout(unsigned int _index, const socket_address& _addr, SOCKET _socket, int _timeout) {}
 
     virtual void OnFinished(unsigned int _index, const socket_address& _addr, SOCKET _socket,
                             int _error, int _conn_rtt, int _conn_totalcost, int _complex_totalcost) {}
 };
 
 class ComplexConnect {
+
+  public:
+
   public:
     ComplexConnect(unsigned int _timeout /*ms*/, unsigned int _interval /*ms*/);
     ComplexConnect(unsigned int _timeout /*ms*/, unsigned int _interval /*ms*/, unsigned int _error_interval /*ms*/, unsigned int _max_connect);
+    ComplexConnect(unsigned int _timeout /*ms*/, unsigned int _interval /*ms*/, unsigned int _error_interval /*ms*/, 
+                    unsigned int _v4_timeout, unsigned int _v6_timeout);
     ~ComplexConnect();
 
     SOCKET ConnectImpatient(const std::vector<socket_address>& _vecaddr, SocketBreaker& _breaker, MComplexConnect* _observer = NULL,
@@ -69,6 +74,9 @@ class ComplexConnect {
     unsigned int IndexRtt() const { return index_conn_rtt_;}
     unsigned int IndexTotalCost() const { return index_conn_totalcost_;}
     unsigned int TotalCost() const { return totalcost_;}
+    bool IsInterrupted() const{ return is_interrupted_;}
+    bool IsConnectiveCheckFailed() const{   return is_connective_check_failed_; }
+    void SetNeedDetailLog(bool _need) {need_detail_log_ = _need;}
 
   private:
     int __ConnectTime(unsigned int _index) const;
@@ -91,10 +99,15 @@ class ComplexConnect {
     int index_conn_rtt_;
     int index_conn_totalcost_;
     int totalcost_;
+    bool is_interrupted_;
+    bool is_connective_check_failed_;
+    bool need_detail_log_;
+    unsigned int v4_timeout_;
+    unsigned int v6_timeout_;
+    bool indepent_timeout_;
 };
 
-#ifdef COMPLEX_CONNECT_NAMESPACE
 }
-#endif
+}
 
 #endif

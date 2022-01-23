@@ -24,6 +24,7 @@
 #include <limits.h>
 #include <algorithm>
 
+
 #include "mars/comm/xlogger/xloggerbase.h"
 #include "mars/comm/xlogger/loginfo_extract.h"
 #include "mars/comm/ptrbuffer.h"
@@ -36,6 +37,8 @@
 #include <inttypes.h>
 #endif
 
+namespace mars {
+namespace xlog {
 void log_formater(const XLoggerInfo* _info, const char* _logbody, PtrBuffer& _log) {
     static const char* levelStrings[] = {
         "V",
@@ -51,7 +54,7 @@ void log_formater(const XLoggerInfo* _info, const char* _logbody, PtrBuffer& _lo
     static int error_count = 0;
     static int error_size = 0;
 
-    if (_log.MaxLength() <= _log.Length() + 5 * 1024) {  // allowd len(_log) <= 11K(16K - 5K)
+    if (_log.MaxLength() <= _log.Length() + 5 * 1024) {  // allowed len(_log) <= 11K(16K - 5K)
         ++error_count;
         error_size = (int)strnlen(_logbody, 1024 * 1024);
 
@@ -70,14 +73,21 @@ void log_formater(const XLoggerInfo* _info, const char* _logbody, PtrBuffer& _lo
 
     if (NULL != _info) {
         const char* filename = ExtractFileName(_info->filename);
+
+#if _WIN32
         char strFuncName [128] = {0};
         ExtractFunctionName(_info->func_name, strFuncName, sizeof(strFuncName));
+#else
+        const char* strFuncName = NULL == _info->func_name ? "" : _info->func_name;
+#endif
 
         char temp_time[64] = {0};
 
         if (0 != _info->timeval.tv_sec) {
             time_t sec = _info->timeval.tv_sec;
             tm tm = *localtime((const time_t*)&sec);
+
+
 #ifdef ANDROID
             snprintf(temp_time, sizeof(temp_time), "%d-%02d-%02d %+.1f %02d:%02d:%02d.%.3ld", 1900 + tm.tm_year, 1 + tm.tm_mon, tm.tm_mday,
                      tm.tm_gmtoff / 3600.0, tm.tm_hour, tm.tm_min, tm.tm_sec, _info->timeval.tv_usec / 1000);
@@ -91,10 +101,10 @@ void log_formater(const XLoggerInfo* _info, const char* _logbody, PtrBuffer& _lo
         }
 
         // _log.AllocWrite(30*1024, false);
-        int ret = snprintf((char*)_log.PosPtr(), 1024, "[%s][%s][%" PRIdMAX ", %" PRIdMAX "%s][%s][%s, %s, %d][",  // **CPPLINT SKIP**
+        int ret = snprintf((char*)_log.PosPtr(), 1024, "[%s][%s][%" PRIdMAX ", %" PRIdMAX "%s][%s][%s:%d, %s][",  // **CPPLINT SKIP**
                            _logbody ? levelStrings[_info->level] : levelStrings[kLevelFatal], temp_time,
                            _info->pid, _info->tid, _info->tid == _info->maintid ? "*" : "", _info->tag ? _info->tag : "",
-                           filename, strFuncName, _info->line);
+                           filename, _info->line, strFuncName);
 
         assert(0 <= ret);
         _log.Length(_log.Pos() + ret, _log.Length() + ret);
@@ -120,3 +130,5 @@ void log_formater(const XLoggerInfo* _info, const char* _logbody, PtrBuffer& _lo
     if (*((char*)_log.PosPtr() - 1) != nextline) _log.Write(&nextline, 1);
 }
 
+}
+}

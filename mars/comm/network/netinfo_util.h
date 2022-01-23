@@ -21,7 +21,18 @@
 #define SRC_NETINFO_UTIL_H_
 
 #include <string>
-std::string GetDetailNetInfo();
+
+typedef enum {
+    kNetworkTypeUnknown,
+    kNetworkTypeNoNet,
+    kNetworkTypeWiFi,
+    kNetworkType2G,
+    kNetworkType3G,
+    kNetworkType4G,
+} NetworkType;
+
+NetworkType GetNetworkType();
+std::string GetDetailNetInfo(bool _need_wifi_ssid = true);
 
 
 #endif /* SRC_NETINFO_UTIL_H_ */

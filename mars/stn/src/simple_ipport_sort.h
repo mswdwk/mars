@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <deque>
 
 #include "mars/comm/thread/lock.h"
 #include "mars/comm/tinyxml2.h"
@@ -44,7 +45,7 @@ class SimpleIPPortSort {
     void RemoveBannedList(const std::string& _ip);
     void Update(const std::string& _ip, uint16_t _port, bool _is_success);
 
-    void SortandFilter(std::vector<IPPortItem>& _items, int _needcount) const;
+    void SortandFilter(std::vector<IPPortItem>& _items, int _needcount, bool _use_IPv6) const;
 
     void AddServerBan(const std::string& _ip);
     
@@ -60,8 +61,11 @@ class SimpleIPPortSort {
     bool __CanUpdate(const std::string& _ip, uint16_t _port, bool _is_success) const;
 
     void __FilterbyBanned(std::vector<IPPortItem>& _items) const;
-    void __SortbyBanned(std::vector<IPPortItem>& _items) const;
+    void __SortbyBanned(std::vector<IPPortItem>& _items, bool _use_IPv6) const;
     bool __IsServerBan(const std::string& _ip) const;
+    bool __IsV6Ip(const IPPortItem& item) const;
+    void __PickIpItemRandom(std::vector<IPPortItem>& _items, std::deque<IPPortItem>& _items_history, std::deque<IPPortItem>& _items_new) const;
+    bool __IsIPv6(const std::string& _ip);
     
   private:
     SimpleIPPortSort(const SimpleIPPortSort&);
@@ -71,9 +75,13 @@ class SimpleIPPortSort {
     std::string hostpath_;
     tinyxml2::XMLDocument recordsxml_;
 
-    mutable Mutex mutex_;
+    mutable comm::Mutex mutex_;
     mutable std::vector<BanItem> _ban_fail_list_;
     mutable std::map<std::string, uint64_t> _server_bans_;
+
+    uint8_t IPv6_ban_flag_;
+    uint8_t IPv4_ban_flag_;
+    bool ban_v6_;
 };
 
 }}

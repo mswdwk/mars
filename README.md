@@ -1,10 +1,10 @@
 ## Mars
 
 [![license](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](https://github.com/Tencent/mars/blob/master/LICENSE)
-[![Release Version](https://img.shields.io/badge/release-1.1.9-red.svg)](https://github.com/Tencent/mars/releases)
+[![Release Version](https://img.shields.io/badge/release-1.2.3-red.svg)](https://github.com/Tencent/mars/releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Tencent/mars/pulls)
-[![WeChat Approved](https://img.shields.io/badge/Wechat_Approved-1.1.9-red.svg)](https://github.com/Tencent/mars/wiki)
-[![WeChat Approved](https://img.shields.io/badge/Platform-%20iOS%20%7C%20OS%20X%20%7C%20Android(ndk11c)%20%7C%20Windows%20-brightgreen.svg)](https://github.com/Tencent/mars/wiki)
+[![WeChat Approved](https://img.shields.io/badge/Wechat_Approved-1.2.3-red.svg)](https://github.com/Tencent/mars/wiki)
+[![WeChat Approved](https://img.shields.io/badge/Platform(cmake)-%20iOS%20%7C%20OS%20X%20%7C%20Android(ndkr20)%20%7C%20Windows(vs2015)%20-brightgreen.svg)](https://github.com/Tencent/mars/wiki)
 
 (中文版本请参看[这里](#mars_cn))
 
@@ -41,7 +41,7 @@ Add dependencies by adding the following lines to your app/build.gradle.
 
 ```xml
 dependencies {
-    compile 'com.tencent.mars:mars-wrapper:1.1.8'
+    compile 'com.tencent.mars:mars-wrapper:1.2.5'
 }
 ```
 
@@ -53,16 +53,17 @@ Add dependencies by adding the following lines to your app/build.gradle.
 
 ```xml
 dependencies {
-    compile 'com.tencent.mars:mars-core:1.2.1'
+    compile 'com.tencent.mars:mars-core:1.2.5'
 }
 ```
 **OR**
 #### <a name="">mars-xlog</a>
 If you just want to user xlog, add dependencies by adding the following lines to your app/build.gradle.
-note: xlog is included in mars-core and mars-wrapper. 
+note: xlog is included in mars-core and mars-wrapper.
+
 ```xml
 dependencies {
-    compile 'com.tencent.mars:mars-xlog:1.0.6'
+    compile 'com.tencent.mars:mars-xlog:1.2.5'
 }
 ```
 
@@ -75,26 +76,27 @@ Initialize Xlog when your APP starts. Remember to use an exclusive folder to sav
 When multiple processes is used in your app, make sure that each process owns its exclusive log file.
 
 ```java
-System.loadLibrary("stlport_shared");
+System.loadLibrary("c++_shared");
 System.loadLibrary("marsxlog");
 
 final String SDCARD = Environment.getExternalStorageDirectory().getAbsolutePath();
 final String logPath = SDCARD + "/marssample/log";
 
-// this is necessary, or may cash for SIGBUS
+// this is necessary, or may crash for SIGBUS
 final String cachePath = this.getFilesDir() + "/xlog"
 
 //init xlog
-if (BuildConfig.DEBUG) {
-    Xlog.appenderOpen(Xlog.LEVEL_DEBUG, Xlog.AppednerModeAsync, cachePath, logPath, "MarsSample", "");
-    Xlog.setConsoleLogOpen(true);
+Xlog xlog = new Xlog();
+Log.setLogImp(xlog);
 
+if (BuildConfig.DEBUG) {
+    Log.setConsoleLogOpen(true);
+  	Log.appenderOpen(Xlog.LEVEL_DEBUG, Xlog.AppednerModeAsync, "", logPath, logFileName, 0);
 } else {
-    Xlog.appenderOpen(Xlog.LEVEL_INFO, Xlog.AppednerModeAsync, cachePath, logPath, "MarsSample", "");
-    Xlog.setConsoleLogOpen(false);
+    Log.setConsoleLogOpen(false);
+  	Log.appenderOpen(Xlog.LEVEL_INFO, Xlog.AppednerModeAsync, "", logPath, logFileName, 0);
 }
 
-Log.setLogImp(new Xlog());
 ```
 
 Uninitialized Xlog when your app exits
@@ -106,7 +108,7 @@ Log.appenderClose();
 
 #### <a name="STN">STN Init</a>
 
-If you add dependencies of mars-core to your project, you need to initialize and release STN.  
+If you add dependencies of mars-core to your project, you need to initialize and release STN.
 Initialize STN before you use it
 
 ```java
@@ -168,13 +170,18 @@ If you want to modify the encryption algorithm of Xlog, the packer/unpacker of l
 ### <a name="apple">[iOS/OS X](https://github.com/Tencent/mars/wiki/Mars-iOS%EF%BC%8FOS-X-%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97)</a>
 Compile
 
+```python
+python build_ios.py
 ```
-python build_apple.py
+
+or 
+```python
+python build_osx.py
 ```
 
 1. Add mars.framework as a dependency of your project.
-2. Rename files with .rewriteme extension to .cc extension.
-3. Add header files and source files into your project.
+2. Rename files in mars/libraries/mars_android_sdk/jni with .rewriteme extension to .cc extension.
+3. Add header files in mars/libraries/mars_android_sdk/jni and source files from step 2 into your project.
 
 #### <a name="Xlog">Xlog Init</a>
 
@@ -196,10 +203,19 @@ appender_set_console_log(true);
 xlogger_SetLevel(kLevelInfo);
 appender_set_console_log(false);
 #endif
-appender_open(kAppednerAsync, [logPath UTF8String], "Test", "");
+XLogConfig config;
+config.mode_ = kAppenderAsync;
+config.logdir_ = [logPath UTF8String];
+config.nameprefix_ = "Test";
+config.pub_key_ = "";
+config.compress_mode_ = kZlib;
+config.compress_level_ = 0;
+config.cachedir_ = "";
+config.cache_days_ = 0;
+appender_open(config);
 ```
 
-Uninitialized xlog in function "applicationWillTerminate"
+Close xlog in function "applicationWillTerminate"
 
 
 ```cpp
@@ -249,7 +265,7 @@ Initialize STN before you use it:
 }
 
 - (void)reportEvent_OnForeground:(BOOL)isForeground {
-    mars::baseevent::OnForeground(isForground);
+    mars::baseevent::OnForeground(isForeground);
 }
 
 - (void)makesureLongLinkConnect {
@@ -257,7 +273,7 @@ Initialize STN before you use it:
 }
 ```
 
-Firstly, you should call the setCalBack interface, and secondly, the Mars.init. Then, to initialize the Mars, there is to need to strictly follow the orders of the four commands. Finally, after Mars are initialized, onForeground and makesureLongLinkConnect can be called.
+Firstly, you should call the setCallBack interface, and secondly, the Mars.init. Then, to initialize the Mars, there is to need to strictly follow the orders of the four commands. Finally, after Mars are initialized, onForeground and makesureLongLinkConnect can be called.
 
 If you want to destroy STN or exit App:
 
@@ -273,7 +289,7 @@ When the App's state of background or foreground is changed:
 
 ```objc
 - (void)reportEvent_OnForeground:(BOOL)isForeground {
-    mars::baseevent::OnForeground(isForground);
+    mars::baseevent::OnForeground(isForeground);
 }
 ```
 
@@ -290,12 +306,12 @@ Install Visual Studio 2015.
 
 Compile
 ```python
-python build_for_win32.py
+python build_windows.py
 ```
 
 1. Add mars.lib as a dependency of your project.
-2. Rename files with .rewriteme extension to .cc extension.
-3. Add header files and source files into your project.
+2. Rename files in mars/libraries/mars_android_sdk/jni with .rewriteme extension to .cc extension.
+3. Add header files in mars/libraries/mars_android_sdk/jni and source files from step 2 into your project.
 
 #### <a name="Xlog">Xlog Init</a>
 
@@ -313,7 +329,7 @@ appender_set_console_log(true);
 xlogger_SetLevel(kLevelInfo);
 appender_set_console_log(false);
 #endif
-appender_open(kAppednerAsync, logPath.c_str(), "Test", pubKey.c_str());
+appender_open(kAppenderAsync, logPath.c_str(), "Test", 0, pubKey.c_str());
 ```
 
 Uninitialized xlog before your app exits
@@ -348,12 +364,12 @@ void Init()
 	mars::stn::SetCallback(mars::stn::StnCallBack::Instance());
 	mars::app::SetCallback(mars::app::AppCallBack::Instance());
 	mars::baseevent::OnCreate();
-	
+
 	//todo
 	//mars::stn::SetClientVersion(version);
 	//setShortLinkDebugIP(...)
 	//setLongLinkAddress(...)
-	
+
 	mars::baseevent::OnForeground(true);
 	mars::stn::MakesureLonglinkConnected();
 }
@@ -384,14 +400,13 @@ For more information about contributing issues or pull requests, see our [Mars C
 
 Mars is under the MIT license. See the [LICENSE](https://github.com/Tencent/mars/blob/master/LICENSE) file for details.
 
-
 ------------------------------
 ## <a name="mars_cn">Mars</a>
 
 [![license](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](https://github.com/Tencent/mars/blob/master/LICENSE)
-[![Release Version](https://img.shields.io/badge/release-1.1.9-red.svg)](https://github.com/Tencent/mars/releases)
+[![Release Version](https://img.shields.io/badge/release-1.2.3-red.svg)](https://github.com/Tencent/mars/releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Tencent/mars/pulls)
-[![WeChat Approved](https://img.shields.io/badge/Wechat_Approved-1.1.9-red.svg)](https://github.com/Tencent/mars/wiki)
+[![WeChat Approved](https://img.shields.io/badge/Wechat_Approved-1.2.3-red.svg)](https://github.com/Tencent/mars/wiki)
 [![WeChat Approved](https://img.shields.io/badge/Platform-%20iOS%20%7C%20OS%20X%20%7C%20Android%20-brightgreen.svg)](https://github.com/Tencent/mars/wiki)
 
 Mars 是微信官方的跨平台跨业务的终端基础组件。
@@ -423,7 +438,7 @@ gradle 接入我们提供了两种接入方式：[mars-wrapper](#wrapper) 或者
 
 ```xml
 dependencies {
-    compile 'com.tencent.mars:mars-wrapper:1.1.8'
+    compile 'com.tencent.mars:mars-wrapper:1.2.5'
 }
 ```
 
@@ -436,7 +451,7 @@ dependencies {
 
 ```xml
 dependencies {
-    compile 'com.tencent.mars:mars-core:1.2.1'
+    compile 'com.tencent.mars:mars-core:1.2.5'
 }
 ```
 **或者**
@@ -444,7 +459,7 @@ dependencies {
 如果只想使用 xlog,可以只加 xlog 的依赖(mars-core,mars-wrapper 中都已经包括 xlog)：
 ```xml
 dependencies {
-    compile 'com.tencent.mars:mars-xlog:1.0.6'
+    compile 'com.tencent.mars:mars-xlog:1.2.5'
 }
 ```
 接着往下操作之前，请先确保你已经添加了 mars-wrapper 或者 mars-core 或者 mars-xlog 的依赖
@@ -455,22 +470,30 @@ dependencies {
 
 
 ```java
-System.loadLibrary("stlport_shared");
+System.loadLibrary("c++_shared");
 System.loadLibrary("marsxlog");
 
 final String SDCARD = Environment.getExternalStorageDirectory().getAbsolutePath();
 final String logPath = SDCARD + "/marssample/log";
 
-// this is necessary, or may cash for SIGBUS
+// this is necessary, or may crash for SIGBUS
 final String cachePath = this.getFilesDir() + "/xlog"
 
 //init xlog
+Xlog.XLogConfig logConfig = new Xlog.XLogConfig();
+logConfig.mode = Xlog.AppednerModeAsync;
+logConfig.logdir = logPath;
+logConfig.nameprefix = logFileName;
+logConfig.pubkey = "";
+logConfig.compressmode = Xlog.ZLIB_MODE;
+logConfig.compresslevel = 0;
+logConfig.cachedir = "";
+logConfig.cachedays = 0;
 if (BuildConfig.DEBUG) {
-    Xlog.appenderOpen(Xlog.LEVEL_DEBUG, Xlog.AppednerModeAsync, cachePath, logPath, "MarsSample", "");
+    logConfig.level = Xlog.LEVEL_VERBOSE;
     Xlog.setConsoleLogOpen(true);
-
 } else {
-    Xlog.appenderOpen(Xlog.LEVEL_INFO, Xlog.AppednerModeAsync, cachePath, logPath, "MarsSample", "");
+    logConfig.level = Xlog.LEVEL_INFO;
     Xlog.setConsoleLogOpen(false);
 }
 
@@ -552,10 +575,15 @@ StnLogic.reset();
 编译
 
 ```
-python build_apple.py
+python build_ios.py
 ```
 
-把 mars.framework 作为依赖加入到你的项目中，把和 mars.framework 同目录的后缀名为 rewriteme 的文件名删掉".rewriteme"和头文件一起加入到你的项目中。
+or 
+```python
+python build_osx.py
+```
+
+把 mars.framework 作为依赖加入到你的项目中，把mars/libraries/mars_android_sdk/jni 目录的后缀名为 rewriteme 的文件名删掉".rewriteme"和头文件一起加入到你的项目中。
 
 #### <a name="Xlog">Xlog Init</a>
 
@@ -578,7 +606,17 @@ appender_set_console_log(true);
 xlogger_SetLevel(kLevelInfo);
 appender_set_console_log(false);
 #endif
-appender_open(kAppednerAsync, [logPath UTF8String], "Test", "");
+
+XLogConfig config;
+config.mode_ = kAppenderAsync;
+config.logdir_ = [logPath UTF8String];
+config.nameprefix_ = "Test";
+config.pub_key_ = "";
+config.compress_mode_ = kZlib;
+config.compress_level_ = 0;
+config.cachedir_ = "";
+config.cache_days_ = 0;
+appender_open(config);
 ```
 
 在函数 "applicationWillTerminate" 中反初始化 Xlog
@@ -672,10 +710,10 @@ appender_close();
 编译
 
 ```python
-python build_for_win32.py
+python build_windows.py
 ```
 
-把 mars.lib作为依赖加入到你的项目中，把和 mars.lib 同目录的后缀名为 rewriteme 的文件名删掉".rewriteme"和头文件一起加入到你的项目中。
+把 mars.lib作为依赖加入到你的项目中，把mars/libraries/mars_android_sdk/jni 目录的后缀名为 rewriteme 的文件名删掉".rewriteme"和头文件一起加入到你的项目中。
 
 #### <a name="Xlog">Xlog Init</a>
 
@@ -693,7 +731,7 @@ appender_set_console_log(true);
 xlogger_SetLevel(kLevelInfo);
 appender_set_console_log(false);
 #endif
-appender_open(kAppednerAsync, logPath.c_str(), "Test", pubKey.c_str());
+appender_open(kAppenderAsync, logPath.c_str(), "Test", 0,  pubKey.c_str());
 ```
 
 在程序退出前反初始化 Xlog
@@ -727,12 +765,12 @@ void Init()
 	mars::stn::SetCallback(mars::stn::StnCallBack::Instance());
 	mars::app::SetCallback(mars::app::AppCallBack::Instance());
 	mars::baseevent::OnCreate();
-	
+
 	//todo
 	//mars::stn::SetClientVersion(version);
 	//setShortLinkDebugIP(...)
 	//setLongLinkAddress(...)
-	
+
 	mars::baseevent::OnForeground(true);
 	mars::stn::MakesureLonglinkConnected();
 }

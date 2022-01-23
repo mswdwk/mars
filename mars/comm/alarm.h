@@ -29,6 +29,9 @@
 #include "android/wakeuplock.h"
 #endif
 
+namespace mars {
+namespace comm {
+
 class Alarm {
   public:
     enum {
@@ -43,6 +46,7 @@ class Alarm {
     explicit Alarm(const T& _op, bool _inthread = true)
         : target_(detail::transform(_op))
         , reg_async_(MessageQueue::InstallAsyncHandler(MessageQueue::GetDefMessageQueue()))
+        , broadcast_msg_id_(MessageQueue::KNullPost)
         , runthread_(boost::bind(&Alarm::__Run, this), "alarm")
         , inthread_(_inthread)
         , seq_(0), status_(kInit)
@@ -50,6 +54,7 @@ class Alarm {
         , reg_(MessageQueue::InstallMessageHandler(boost::bind(&Alarm::OnAlarm, this, _1, _2), true))
 #ifdef ANDROID
         , wakelock_(NULL)
+        , type_(-1)
 #endif
     {
         xinfo2(TSF"handler:(%_,%_)", reg_async_.Get().queue, reg_async_.Get().seq);
@@ -59,6 +64,7 @@ class Alarm {
     explicit Alarm(const T& _op, const MessageQueue::MessageQueue_t& _id)
         : target_(detail::transform(_op))
         , reg_async_(MessageQueue::InstallAsyncHandler(_id))
+        , broadcast_msg_id_(MessageQueue::KNullPost)
         , runthread_(boost::bind(&Alarm::__Run, this), "alarm")
         , inthread_(false)
         , seq_(0), status_(kInit)
@@ -66,6 +72,7 @@ class Alarm {
         , reg_(MessageQueue::InstallMessageHandler(boost::bind(&Alarm::OnAlarm, this, _1, _2), true))
 #ifdef ANDROID
         , wakelock_(NULL)
+        , type_(-1)
 #endif
     {
         xinfo2(TSF"handler:(%_,%_)", reg_async_.Get().queue, reg_async_.Get().seq);
@@ -82,7 +89,12 @@ class Alarm {
 #endif
     }
 
-    bool Start(int _after);  // ms
+#ifdef ANDROID
+    static void onAlarmImpl(int64_t _id);
+    void SetType(int _type) {type_ = _type;}
+#endif
+
+    bool Start(int _after, bool _needWake=true);  // ms
     bool Cancel();
 
     bool IsWaiting() const;
@@ -102,6 +114,7 @@ class Alarm {
   private:
     Runnable*                   target_;
     MessageQueue::ScopeRegister reg_async_;
+    MessageQueue::MessagePost_t broadcast_msg_id_;
     Thread                      runthread_;
     bool                        inthread_;
 
@@ -115,7 +128,9 @@ class Alarm {
     MessageQueue::ScopeRegister reg_;
 #ifdef ANDROID
     WakeUpLock*                 wakelock_;
+    int                         type_;
 #endif
 };
 
+}}
 #endif /* COMM_ALARM_H_ */

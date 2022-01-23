@@ -30,6 +30,7 @@
 #include "mars/stn/proto/longlink_packer.h"
 
 using namespace mars::stn;
+using namespace mars::comm;
 
 static const unsigned int kCmdIdOutOfBand = 72;
 static const int kTimeout = 10*1000;  // s
@@ -44,9 +45,9 @@ LongLinkSpeedTestItem::LongLinkSpeedTestItem(const std::string& _ip, uint16_t _p
         
     AutoBuffer body;
     AutoBuffer extension;
-    longlink_noop_req_body(body, extension);
+    gDefaultLongLinkEncoder.longlink_noop_req_body(body, extension);
 
-    longlink_pack(longlink_noop_cmdid(), Task::kNoopTaskID, body, extension, req_ab_, NULL);
+    gDefaultLongLinkEncoder.longlink_pack(gDefaultLongLinkEncoder.longlink_noop_cmdid(), Task::kNoopTaskID, body, extension, req_ab_, NULL);
     req_ab_.Seek(0, AutoBuffer::ESeekStart);
 
     socket_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -84,7 +85,9 @@ LongLinkSpeedTestItem::LongLinkSpeedTestItem(const std::string& _ip, uint16_t _p
 
     before_connect_time_ = gettickcount();
 
-    ::connect(socket_, (sockaddr*)&_addr, sizeof(_addr));
+    if (0 !=::connect(socket_, (sockaddr*)&_addr, sizeof(_addr))) {
+        xerror2(TSF "connect fail");
+    }
 }
 
 LongLinkSpeedTestItem::~LongLinkSpeedTestItem() {
@@ -201,7 +204,7 @@ int LongLinkSpeedTestItem::__HandleSpeedTestResp() {
         AutoBuffer body;
         AutoBuffer extension;
         
-        int nRet  = longlink_unpack(resp_ab_, anCmdID, anSeq, pacLength, body, extension, NULL);
+        int nRet  = gDefaultLongLinkEncoder.longlink_unpack(resp_ab_, anCmdID, anSeq, pacLength, body, extension, NULL);
 
         if (LONGLINK_UNPACK_FALSE == nRet) {
             xerror2(TSF"longlink_unpack false");
@@ -218,7 +221,7 @@ int LongLinkSpeedTestItem::__HandleSpeedTestResp() {
 
             resp_ab_.Reset();
             return kLongLinkSpeedTestOOB;
-        } else if (longlink_noop_isresp(Task::kNoopTaskID, anCmdID, anSeq, body, extension)) {
+        } else if (gDefaultLongLinkEncoder.longlink_noop_isresp(Task::kNoopTaskID, anCmdID, anSeq, body, extension)) {
             return kLongLinkSpeedTestSuc;
         } else {
             xassert2(false);

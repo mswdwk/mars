@@ -25,11 +25,15 @@
 
 #include "comm/xlogger/xlogger.h"
 
+namespace mars {
+namespace comm {
 
 SocketBreaker::SocketBreaker()
-: create_success_(true),
+: create_success_(false),
 broken_(false)
 {
+    pipes_[0] = -1;
+    pipes_[1] = -1;
     ReCreate();
 }
 
@@ -45,15 +49,20 @@ bool SocketBreaker::IsCreateSuc() const
 
 bool SocketBreaker::ReCreate()
 {
+    ScopedLock lock(mutex_);
+    if(pipes_[1] >= 0)
+        close(pipes_[1]);
+    if(pipes_[0] >= 0)
+        close(pipes_[0]);
+    
     pipes_[0] = -1;
     pipes_[1] = -1;
 
     int Ret;
     Ret = pipe(pipes_);
-    xassert2(-1 != Ret, "pipe errno=%d", errno);
-
     if (Ret == -1)
     {
+        xerror2(TSF"pipe errno=%_,%_", errno, strerror(errno));
         pipes_[0] = -1;
         pipes_[1] = -1;
         create_success_ = false;
@@ -104,11 +113,17 @@ bool SocketBreaker::Break()
 
     if (ret < 0 || ret != (int)sizeof(dummy))
     {
-        xerror2(TSF"Ret:%_, errno:(%_, %_)", ret, errno, strerror(errno));
+        xerror2(TSF"Ret:%_, fd %_ errno:(%_, %_)", ret, pipes_[1], errno, strerror(errno));
         broken_ =  false;
     }
 
     return broken_;
+}
+
+bool SocketBreaker::Break(int reason)
+{
+    reason_ = reason;
+    return Break();
 }
 
 bool SocketBreaker::Clear()
@@ -116,10 +131,9 @@ bool SocketBreaker::Clear()
     ScopedLock lock(mutex_);
     char dummy[128];
     int ret = (int)read(pipes_[0], dummy, sizeof(dummy));
-
-    if (ret < 0)
-    {
-        xverbose2(TSF"Ret=%0", ret);
+    int lasterror = errno;
+    if (ret < 0 && EWOULDBLOCK != lasterror){
+        xerror2(TSF"clear pipe Ret=%_, errno:(%_, %_)", ret, lasterror, strerror(lasterror));
         return false;
     }
 
@@ -129,19 +143,31 @@ bool SocketBreaker::Clear()
 
 void SocketBreaker::Close()
 {
+    ScopedLock lock(mutex_);
     broken_ =  true;
     if(pipes_[1] >= 0)
         close(pipes_[1]);
     if(pipes_[0] >= 0)
         close(pipes_[0]);
+    pipes_[0] = -1;
+    pipes_[1] = -1;
 }
 
 int SocketBreaker::BreakerFD() const
 {
+    ScopedLock lock(mutex_);
     return pipes_[0];
 }
 
 bool SocketBreaker::IsBreak() const
 {
+    ScopedLock lock(mutex_);
     return broken_;
+}
+
+int SocketBreaker::BreakReason() const{
+    return reason_;
+}
+
+}
 }

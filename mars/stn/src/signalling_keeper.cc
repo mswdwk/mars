@@ -31,6 +31,7 @@
 #include "mars/stn/proto/longlink_packer.h"
 
 using namespace mars::stn;
+using namespace mars::comm;
 
 static unsigned int g_period = 5 * 1000;  // ms
 static unsigned int g_keepTime = 20 *1000;  // ms
@@ -50,6 +51,7 @@ SignallingKeeper::SignallingKeeper(const LongLink& _longlink, MessageQueue::Mess
 
 SignallingKeeper::~SignallingKeeper()
 {
+    xinfo_function();
     Stop();
 }
 
@@ -85,7 +87,7 @@ void SignallingKeeper::OnNetWorkDataChanged(const char*, ssize_t, ssize_t)
         MessageQueue::CancelMessage(postid_);
     }
     
-    postid_ = MessageQueue::AsyncInvokeAfter(g_period, boost::bind(&SignallingKeeper::__OnTimeOut, this), msgreg_.Get());
+    postid_ = MessageQueue::AsyncInvokeAfter(g_period, boost::bind(&SignallingKeeper::__OnTimeOut, this), msgreg_.Get(), "SignallingKeeper::__OnTimeOut");
 }
 
 
@@ -130,13 +132,13 @@ void SignallingKeeper::__SendSignallingBuffer()
         {
             udp_client_.SetIpPort(ip_, port_);
             AutoBuffer buffer;
-            longlink_pack(signal_keep_cmdid(), 0, KNullAtuoBuffer, KNullAtuoBuffer, buffer, NULL);
+            gDefaultLongLinkEncoder.longlink_pack(gDefaultLongLinkEncoder.signal_keep_cmdid(), 0, KNullAtuoBuffer, KNullAtuoBuffer, buffer, NULL);
             udp_client_.SendAsync(buffer.Ptr(), buffer.Length());
         }
     } else {
         if (fun_send_signalling_buffer_)
         {
-            fun_send_signalling_buffer_(KNullAtuoBuffer, KNullAtuoBuffer, signal_keep_cmdid());
+            fun_send_signalling_buffer_(KNullAtuoBuffer, KNullAtuoBuffer, gDefaultLongLinkEncoder.signal_keep_cmdid());
         }
     }
 }
