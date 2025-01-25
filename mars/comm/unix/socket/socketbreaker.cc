@@ -17,157 +17,198 @@
  *      Author: yerungui
  */
 
-
-
 #include "socketbreaker.h"
 
 #include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+
+#include <cstdint>
 
 #include "comm/xlogger/xlogger.h"
 
 namespace mars {
 namespace comm {
 
-SocketBreaker::SocketBreaker()
-: create_success_(false),
-broken_(false)
-{
-    pipes_[0] = -1;
-    pipes_[1] = -1;
+SocketBreaker::SocketBreaker() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pipes_[0] = -1;
+        pipes_[1] = -1;
+    }
+
     ReCreate();
 }
 
-SocketBreaker::~SocketBreaker()
-{
+SocketBreaker::~SocketBreaker() {
     Close();
 }
 
-bool SocketBreaker::IsCreateSuc() const
-{
+bool SocketBreaker::IsCreateSuc() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return create_success_;
 }
 
-bool SocketBreaker::ReCreate()
-{
-    ScopedLock lock(mutex_);
-    if(pipes_[1] >= 0)
-        close(pipes_[1]);
-    if(pipes_[0] >= 0)
-        close(pipes_[0]);
-    
-    pipes_[0] = -1;
-    pipes_[1] = -1;
+bool SocketBreaker::ReCreate() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    _Cleanup();
 
-    int Ret;
-    Ret = pipe(pipes_);
-    if (Ret == -1)
-    {
-        xerror2(TSF"pipe errno=%_,%_", errno, strerror(errno));
-        pipes_[0] = -1;
-        pipes_[1] = -1;
-        create_success_ = false;
-        return create_success_;
-    }
-
-    long flags0 = fcntl(pipes_[0], F_GETFL, 0);
-    long flags1 = fcntl(pipes_[1], F_GETFL, 0);
-
-    if (flags0 < 0 || flags1 < 0) {
-        xerror2(TSF"get old flags error");
-        close(pipes_[0]);
-        close(pipes_[1]);
-        pipes_[0] = -1;
-        pipes_[1] = -1;
-        create_success_ = false;
-        return create_success_;
-    }
-
-    flags0 |= O_NONBLOCK;
-    flags1 |= O_NONBLOCK;
-    int ret0 = fcntl(pipes_[0], F_SETFL, flags0);
-    int ret1 = fcntl(pipes_[1], F_SETFL, flags1);
-
-    if ((-1 == ret1) || (-1 == ret0)) {
-        xerror2(TSF"fcntl error");
-        close(pipes_[0]);
-        close(pipes_[1]);
-        pipes_[0] = -1;
-        pipes_[1] = -1;
-        create_success_ = false;
-        return create_success_;
-    }
-
-    create_success_ = true;
-    return create_success_;
-}
-
-bool SocketBreaker::Break()
-{
-    ScopedLock lock(mutex_);
-
-    if (broken_) return true;
-
-    const char dummy = '1';
-    int ret = (int)write(pipes_[1], &dummy, sizeof(dummy));
-    broken_ = true;
-
-    if (ret < 0 || ret != (int)sizeof(dummy))
-    {
-        xerror2(TSF"Ret:%_, fd %_ errno:(%_, %_)", ret, pipes_[1], errno, strerror(errno));
-        broken_ =  false;
-    }
-
-    return broken_;
-}
-
-bool SocketBreaker::Break(int reason)
-{
-    reason_ = reason;
-    return Break();
-}
-
-bool SocketBreaker::Clear()
-{
-    ScopedLock lock(mutex_);
-    char dummy[128];
-    int ret = (int)read(pipes_[0], dummy, sizeof(dummy));
-    int lasterror = errno;
-    if (ret < 0 && EWOULDBLOCK != lasterror){
-        xerror2(TSF"clear pipe Ret=%_, errno:(%_, %_)", ret, lasterror, strerror(lasterror));
+    if (pipe(pipes_) == -1) {
+        xerror2(TSF "pipe errno %_,%_", errno, strerror(errno));
         return false;
     }
 
-    broken_ =  false;
+    int flags0 = fcntl(pipes_[0], F_GETFL, 0);
+    int flags1 = fcntl(pipes_[1], F_GETFL, 0);
+    if (flags0 == -1 || flags1 == -1) {
+        xerror2(TSF "get old flags error");
+        _Cleanup();
+        return false;
+    }
+
+    int ret0 = fcntl(pipes_[0], F_SETFL, flags0 | O_NONBLOCK);
+    int ret1 = fcntl(pipes_[1], F_SETFL, flags1 | O_NONBLOCK);
+    if (ret0 == -1 || ret1 == -1) {
+        xerror2(TSF "fcntl error %_,%_", errno, strerror(errno));
+        _Cleanup();
+        return false;
+    }
+
+    create_success_ = true;
+    breaked_ = false;
     return true;
 }
 
-void SocketBreaker::Close()
-{
-    ScopedLock lock(mutex_);
-    broken_ =  true;
-    if(pipes_[1] >= 0)
-        close(pipes_[1]);
-    if(pipes_[0] >= 0)
-        close(pipes_[0]);
-    pipes_[0] = -1;
-    pipes_[1] = -1;
+bool SocketBreaker::Break() {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (breaked_)
+        return true;
+    if (!create_success_)
+        return false;
+
+    const char dummy = '1';
+    ssize_t writebytes = write(pipes_[1], &dummy, sizeof(dummy));
+    if (writebytes != sizeof(dummy)) {
+        xerror2(TSF "write ret %_, fd %_ error %_,%_", writebytes, pipes_[1], errno, strerror(errno));
+        return false;
+    }
+
+    breaked_ = true;
+    return true;
 }
 
-int SocketBreaker::BreakerFD() const
-{
-    ScopedLock lock(mutex_);
+bool SocketBreaker::Break(int reason) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        reason_ = reason;
+    }
+
+    return Break();
+}
+
+bool SocketBreaker::Clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (!breaked_)
+        return true;
+
+    char dummy[1024];
+    ssize_t readbytes = 0;
+    for (;;) {
+        ssize_t rv = read(pipes_[0], dummy, sizeof(dummy));
+        if (rv > 0) {
+            readbytes += rv;
+            continue;
+        }
+        if (rv == 0) {  // zero indicates end of file
+            if (readbytes > 0) {
+                breaked_ = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        if (rv == -1) {  // On error, -1 is returned, and errno is set to indicate the error.
+            if (errno == EWOULDBLOCK && readbytes > 0) {
+                breaked_ = false;
+                return true;
+            }
+
+            xerror2(TSF "read ret %_, fd %_ error %_,%_", rv, pipes_[0], errno, strerror(errno));
+            return false;
+        }
+    }
+
+    xassert2(false);
+    return false;
+}
+
+bool SocketBreaker::PreciseBreak(uint32_t cookie) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    ssize_t writebytes = write(pipes_[1], &cookie, sizeof(cookie));
+    if (writebytes != sizeof(cookie)) {
+        xerror2(TSF "write ret %_, fd %_ error %_,%_", writebytes, pipes_[1], errno, strerror(errno));
+        return false;
+    }
+
+    xinfo2(TSF "pipe [%_,%_] write cookie %_", pipes_[0], pipes_[1], cookie);
+    return true;
+}
+
+bool SocketBreaker::PreciseClear(uint32_t* cookie) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    struct pollfd pipepfd = {pipes_[0], POLLIN | POLLHUP, 0};
+    int ret = poll(&pipepfd, 1, 0);
+    if (ret != 1) {
+        xwarn2(TSF "fd %_ no POLLIN event.", pipes_[0]);
+        return false;
+    }
+
+    ssize_t rv = read(pipes_[0], cookie, sizeof(uint32_t));
+    if (rv != sizeof(uint32_t)) {
+        xerror2(TSF "read ret %_, fd %_ error %_,%_", rv, pipes_[0], errno, strerror(errno));
+        return false;
+    }
+
+    xinfo2(TSF "pipe [%_,%_] read cookie %_", pipes_[0], pipes_[1], *cookie);
+    return true;
+}
+
+void SocketBreaker::Close() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    _Cleanup();
+}
+
+int SocketBreaker::BreakerFD() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return pipes_[0];
 }
 
-bool SocketBreaker::IsBreak() const
-{
-    ScopedLock lock(mutex_);
-    return broken_;
+bool SocketBreaker::IsBreak() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return breaked_;
 }
 
-int SocketBreaker::BreakReason() const{
+int SocketBreaker::BreakReason() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return reason_;
 }
 
+void SocketBreaker::_Cleanup() {
+    if (pipes_[1] >= 0)
+        close(pipes_[1]);
+    if (pipes_[0] >= 0)
+        close(pipes_[0]);
+    pipes_[0] = -1;
+    pipes_[1] = -1;
+    create_success_ = false;
+    breaked_ = false;
+    reason_ = 0;
 }
-}
+
+}  // namespace comm
+}  // namespace mars

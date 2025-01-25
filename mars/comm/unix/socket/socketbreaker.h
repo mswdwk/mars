@@ -17,17 +17,16 @@
  *      Author: yerungui
  */
 
-
 #ifndef _SOCKSTBREAKER_
-#define _SOCKSTBREAKER_ 
+#define _SOCKSTBREAKER_
 
-#include "comm/thread/lock.h"
+#include <mutex>
 
 namespace mars {
 namespace comm {
 
 class SocketBreaker {
-  public:
+ public:
     SocketBreaker();
     ~SocketBreaker();
 
@@ -38,23 +37,27 @@ class SocketBreaker {
     bool Break();
     bool Break(int reason);
     bool Clear();
+    bool PreciseBreak(uint32_t cookie);
+    bool PreciseClear(uint32_t* cookie);
 
     bool IsBreak() const;
-    int  BreakerFD() const;
-    int  BreakReason() const;
-  private:
+    int BreakerFD() const;
+    int BreakReason() const;
+
+ private:
     SocketBreaker(const SocketBreaker&);
     SocketBreaker& operator=(const SocketBreaker&);
+    void _Cleanup();
 
-  private:
-    int   pipes_[2];
-    bool  create_success_;
-    bool  broken_;
-    int reason_;
-    mutable Mutex mutex_;
+ private:
+    int pipes_[2];
+    bool create_success_ = false;
+    bool breaked_ = false;
+    int reason_ = 0;
+    mutable std::mutex mutex_;
 };
 
-}
-}
+}  // namespace comm
+}  // namespace mars
 
 #endif

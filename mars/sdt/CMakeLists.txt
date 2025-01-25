@@ -5,7 +5,7 @@ message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
 
 project (sdt)
 
-include(../comm/CMakeUtils.txt)
+include(../comm/utils.cmake)
 include(../comm/CMakeExtraFlags.txt)
 
 include_directories(.)
@@ -16,6 +16,7 @@ include_directories(checkimpl)
 include_directories(..)
 include_directories(../..)
 include_directories(../comm)
+include_directories(../boot)
 include_directories(../../..)
 
 
@@ -47,7 +48,14 @@ if(MSVC)
     include_directories(../comm/windows)
     
 elseif(ANDROID)
-    file(GLOB SELF_ANDROID_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} jni/*.cc)
+    if(NOT CPP_CALL_BACK)
+        file(GLOB SELF_ANDROID_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} jni/*.cc)
+    endif()
+
+    if(NATIVE_CALLBACK)
+        message("sdt native callback")
+        add_definitions(-DNATIVE_CALLBACK)
+    endif()
         
     list(APPEND SELF_SRC_FILES ${SELF_ANDROID_SRC_FILES})
 endif()        

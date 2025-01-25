@@ -18,45 +18,55 @@
 //  Created by garry on 2017/2/17.
 //
 
-#ifndef comm_data_h
-#define comm_data_h
+#ifndef mars_comm_data_h
+#define mars_comm_data_h
 
+#include <cstdint>
 #include <string>
-#include <stdint.h>
 
 namespace mars {
-    namespace comm {
-        
+namespace comm {
+
+// proxy
 enum ProxyType {
     kProxyNone = 0,
     kProxyHttpTunel,
     kProxySocks5,
     kProxyHttp,
 };
-        
-class ProxyInfo {
-public:
-    ProxyInfo():ProxyInfo(kProxyNone, "", "", 0, "", ""){}
-    ProxyInfo(ProxyType _type, const std::string& _host, const std::string& _ip, uint16_t _port, const std::string& _username, const std::string& _password)
-    :type(_type), host(_host), ip(_ip), port(_port), username(_username), password(_password){}
 
-	bool operator==(const ProxyInfo& _rh) {
+class ProxyInfo {
+ public:
+    ProxyInfo() : ProxyInfo(kProxyNone, "", "", 0, "", "") {
+    }
+    ProxyInfo(ProxyType _type,
+              const std::string& _host,
+              const std::string& _ip,
+              uint16_t _port,
+              const std::string& _username,
+              const std::string& _password)
+    : type(_type), host(_host), ip(_ip), port(_port), username(_username), password(_password) {
+    }
+
+    bool operator==(const ProxyInfo& _rh) {
         if (type != _rh.type) {
             return false;
         }
         if (kProxyNone == type) {
             return true;
         }
-        return host == _rh.host && ip == _rh.ip
-                && port == _rh.port && username == _rh.username
-                && password == _rh.password;
+        return host == _rh.host && ip == _rh.ip && port == _rh.port && username == _rh.username
+               && password == _rh.password;
     }
-    
+
     bool IsValid() const {
         return kProxyNone == type || ((!ip.empty() || !host.empty()) && port > 0);
     }
-    
-public:
+    bool IsAddressValid() const {
+        return type != kProxyNone && ((!ip.empty() || !host.empty()) && port > 0);
+    }
+
+ public:
     ProxyType type;
     std::string host;
     std::string ip;
@@ -64,9 +74,51 @@ public:
     std::string username;
     std::string password;
 };
-        
-    
-    }
+
+// connect records
+enum class BizType { CGI = 0, CDN, COUNT };
+enum class ProtoType { TCP = 0, QUIC, COUNT };
+
+struct ConnRecord {
+    BizType biz = BizType::CGI;
+    ProtoType proto = ProtoType::TCP;
+    bool succeed = false;  //.是否连接成功.
+    uint64_t begin_timestamp_ms = 0;
+    unsigned cost_ms = 0;
+    int nettype = 0;  // see NEW_NETTYPE_UNKNOW
+};
+inline bool operator<(const ConnRecord& lhs, const ConnRecord& rhs) {
+    return lhs.begin_timestamp_ms < rhs.begin_timestamp_ms;
 }
 
-#endif /* comm_data_h */
+// host resolve
+enum EResolveHostPriority {
+    PRIORITY_NEWDNS_FIRST = 0,  // newdns 优先.
+    PRIORITY_SIMPLEDNS_FIRST,   // simpledns优先
+};
+
+enum EResolveHostFlag {
+    FLAG_TRY_NEWDNS = 1,
+    FLAG_TRY_SIMPLEDNS = 1 << 1,
+    FLAG_TRY_LOCALDNS = 1 << 2,
+
+    FLAGS_NEWDNS_DEFAULT = FLAG_TRY_NEWDNS | FLAG_TRY_LOCALDNS,
+    FLAGS_SIMPLEDNS_DEFAULT = FLAG_TRY_SIMPLEDNS | FLAG_TRY_LOCALDNS,
+    FLAGS_ALLINONE = FLAG_TRY_NEWDNS | FLAG_TRY_SIMPLEDNS | FLAG_TRY_LOCALDNS,
+    FLAGS_ALL_WITHOUT_LOCALDNS = FLAG_TRY_NEWDNS | FLAG_TRY_SIMPLEDNS,
+};
+
+enum EHostType {
+    kHostNone = 0,
+    kHostFromNewDNS = 1,
+    kHostFromSysDNS = 2,
+    kHostFromDebugIP = 3,
+    kHostFromSimpleDNS = 4,
+    kHostFromLiteral = 5,
+    kHostFromCdnRoute = 6,  //.从cdn路由表中获取到ip.
+};
+
+}  // namespace comm
+}  // namespace mars
+
+#endif /* mars_comm_data_h */

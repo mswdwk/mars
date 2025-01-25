@@ -5,7 +5,7 @@ message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
 
 project (baseevent)
 
-include(../comm/CMakeUtils.txt)
+include(../comm/utils.cmake)
 include(../comm/CMakeExtraFlags.txt)
 
 
@@ -26,7 +26,6 @@ if(MSVC)
     include_directories(../comm/windows)
 elseif(ANDROID)
     file(GLOB SELF_ANDROID_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} jni/*.cc)
-        
     list(APPEND SELF_SRC_FILES ${SELF_ANDROID_SRC_FILES})
 endif()
     

@@ -5,13 +5,14 @@ message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
 
 project (comm)
 
-include(CMakeUtils.txt)
+include(utils.cmake)
 include(CMakeExtraFlags.txt)
 
 include_directories(.)
 include_directories(..)
 include_directories(../..)
 include_directories(../openssl/include)
+include_directories(alarm)
 include_directories(assert)
 include_directories(corepattern)
 include_directories(crypt)
@@ -22,10 +23,17 @@ include_directories(network)
 include_directories(socket)
 include_directories(thread)
 include_directories(xlogger)
+include_directories(owl)
 
 file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} *.cc *.c *.h)
 list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
+if (USE_EXTERNAL_TINYXML2)
+    list(REMOVE_ITEM SELF_SRC_FILES "tinyxml2.cc")
+endif()
 
+file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} alarm/*.cc alarm/*.h)
+source_group(assert FILES ${SELF_TEMP_SRC_FILES})
+list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
 
 file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} assert/*.c assert/*.h)
 source_group(assert FILES ${SELF_TEMP_SRC_FILES})
@@ -59,7 +67,9 @@ file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} messagequeue/*.cc m
 source_group(messagequeue FILES ${SELF_TEMP_SRC_FILES})
 list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
 
- 
+file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} owl/mpl/*.cc owl/mpl/*.h)
+source_group(owl FILES ${SELF_TEMP_SRC_FILES})
+list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
  
 if(MSVC)
     add_definitions(/FI"../projdef.h")
@@ -100,31 +110,34 @@ if(MSVC)
     source_group(windows\\SocketSelect FILES ${SELF_TEMP_SRC_FILES})
     list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})      
     
-else()   
-    
+else()
     file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} unix/socket/*.cc unix/socket/*.h)
     source_group(unix\\socket FILES ${SELF_TEMP_SRC_FILES})
     list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
-
 endif()
 
 if(ANDROID)
-
     add_definitions(-DUSING_XLOG_WEAK_FUNC)
-
     file(GLOB SELF_ANDROID_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR}
             android/*.cc
             android/*.c
             jni/*.cc
             jni/*.c
-            jni/util/*.cc)
-        
+            jni/util/*.cc
+            jni/jnicat/*.cpp
+            unix/xlogger_threadinfo.cc
+        )
     list(APPEND SELF_SRC_FILES ${SELF_ANDROID_SRC_FILES})
 elseif(APPLE)
-
     file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} objc/*.mm objc/*.h)
     source_group(objc FILES ${SELF_TEMP_SRC_FILES})
     list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES} debugger/debugger_utils.c)
+elseif(OHOS)
+    file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} ohos/*.cc unix/xlogger_threadinfo.cc)
+    list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
+elseif(UNIX)
+    file(GLOB SELF_TEMP_SRC_FILES RELATIVE ${PROJECT_SOURCE_DIR} unix/*.cc)
+    list(APPEND SELF_SRC_FILES ${SELF_TEMP_SRC_FILES})
 endif()
 
 

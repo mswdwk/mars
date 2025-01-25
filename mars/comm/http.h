@@ -1,7 +1,7 @@
 // Tencent is pleased to support the open source community by making Mars available.
 // Copyright (C) 2016 THL A29 Limited, a Tencent company. All rights reserved.
 
-// Licensed under the MIT License (the "License"); you may not use this file except in 
+// Licensed under the MIT License (the "License"); you may not use this file except in
 // compliance with the License. You may obtain a copy of the License at
 // http://opensource.org/licenses/MIT
 
@@ -9,7 +9,6 @@
 // distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
 // either express or implied. See the License for the specific language governing permissions and
 // limitations under the License.
-
 
 /*
  * HttpRequest.h
@@ -21,16 +20,17 @@
 #ifndef HTTP_H_
 #define HTTP_H_
 
-#include <string>
-#include <map>
 #include <list>
+#include <map>
+#include <string>
 
-#include "autobuffer.h"
+#include "mars/comm/autobuffer.h"
+#include "mars/comm/strutil.h"
 
 namespace http {
 
 struct less {
-	bool operator()(const std::string& __x, const std::string& __y) const;
+    bool operator()(const std::string& __x, const std::string& __y) const;
 };
 
 enum THttpVersion {
@@ -55,7 +55,7 @@ enum TCsMode {
 };
 
 class RequestLine {
-  public:
+ public:
     enum THttpMethod {
         kUnknown = 0,
         kGet,
@@ -71,13 +71,13 @@ class RequestLine {
 
     static const char* const kHttpMethodString[kMax];
 
-  public:
+ public:
     RequestLine();
     RequestLine(THttpMethod _httpMethod, const char* _url, THttpVersion _httpVersion);
     // RequestLine(const RequestLine&);
     // RequestLine& operator=(const RequestLine&);
 
-  public:
+ public:
     void Method(THttpMethod _method);
     THttpMethod Method() const;
 
@@ -90,20 +90,20 @@ class RequestLine {
     std::string ToString() const;
     bool FromString(const std::string& _requestline);
 
-  private:
+ private:
     THttpMethod http_method_;
     std::string req_url_;
     THttpVersion http_version_;
 };
 
 class StatusLine {
-  public:
+ public:
     StatusLine();
     StatusLine(THttpVersion _httpversion, int _statuscode, const std::string& _reasonphrase);
     // StatusLine(const StatusLine&);
     // StatusLine& operator=(const StatusLine&);
 
-  public:
+ public:
     void Version(THttpVersion _version);
     THttpVersion Version() const;
 
@@ -116,19 +116,18 @@ class StatusLine {
     std::string ToString() const;
     bool FromString(const std::string& _statusline);
 
-  private:
+ private:
     THttpVersion http_version_;
     int statuscode_;
     std::string reason_phrase_;
 };
 
-
 class HeaderFields {
-  public:
+ public:
     // HeaderFields(const HeaderFields&);
     // HeaderFields& operator=(const HeaderFields&);
 
-  public:
+ public:
     static std::pair<const std::string, std::string> MakeContentLength(uint64_t _len);
     static std::pair<const std::string, std::string> MakeTransferEncodingChunked();
     static std::pair<const std::string, std::string> MakeConnectionClose();
@@ -138,6 +137,7 @@ class HeaderFields {
     static std::pair<const std::string, std::string> MakeAcceptEncodingGzip();
     static std::pair<const std::string, std::string> MakeCacheControlNoCache();
     static std::pair<const std::string, std::string> MakeContentTypeOctetStream();
+    static std::pair<const std::string, std::string> MakeUserAgentMicroMessage();
 
     static const char* const KStringHost;
     static const char* const KStringAccept;
@@ -165,27 +165,30 @@ class HeaderFields {
     void Manipulate(const std::pair<const std::string, std::string>& _headerfield);
     const char* HeaderField(const char* _key) const;
     void CopyFrom(const HeaderFields& rhs);
-    std::map<const std::string, std::string, less>& GetHeaders() {return headers_;}
+    std::map<const std::string, std::string, less>& GetHeaders() {
+        return headers_;
+    }
     std::list<std::pair<const std::string, const std::string>> GetAsList() const;
 
     bool IsTransferEncodingChunked() const;
     bool IsConnectionClose() const;
     bool IsConnectionKeepAlive() const;
-    uint64_t ContentLength() const ;
+    uint64_t ContentLength() const;
     uint32_t KeepAliveTimeout() const;
 
     bool Range(long& _start, long& _end) const;
     bool ContentRange(uint64_t* start, uint64_t* end, uint64_t* total) const;
+    static bool ContentRange(const std::string& line, uint64_t* start, uint64_t* end, uint64_t* total);
 
-    const std::string ToString() const;
+    std::string ToString() const;
 
-  private:
+ private:
     std::map<const std::string, std::string, less> headers_;
 };
 
 class IBlockBodyProvider {
-  public:
-    virtual ~IBlockBodyProvider() {}
+ public:
+    virtual ~IBlockBodyProvider() = default;
 
     virtual bool Data(AutoBuffer& _body) = 0;
     virtual bool FillData(AutoBuffer& _body) = 0;
@@ -193,30 +196,39 @@ class IBlockBodyProvider {
 };
 
 class BufferBodyProvider : public IBlockBodyProvider {
-  public:
-    bool Data(AutoBuffer& _body) {
-        if (!_body.Ptr()) return false;
-        
+ public:
+    bool Data(AutoBuffer& _body) override {
+        if (!_body.Ptr()) {
+            return false;
+        }
+
         buffer_.Write(_body.Ptr(), _body.Length());
         _body.Reset();
         return true;
     }
-    bool FillData(AutoBuffer& _body) {
-        if (!buffer_.Ptr()) return false;
+    bool FillData(AutoBuffer& _body) override {
+        if (!buffer_.Ptr()) {
+            return false;
+        }
 
         _body.Write(buffer_.Ptr(), buffer_.Length());
         buffer_.Reset();
         return true;
     }
-    size_t Length() const {return buffer_.Length();}
-    AutoBuffer& Buffer() {return buffer_;}
-  private:
+    size_t Length() const override {
+        return buffer_.Length();
+    }
+    AutoBuffer& Buffer() {
+        return buffer_;
+    }
+
+ private:
     AutoBuffer buffer_;
 };
 
 class IStreamBodyProvider {
-  public:
-    virtual ~IStreamBodyProvider() {}
+ public:
+    virtual ~IStreamBodyProvider() = default;
 
     virtual bool HaveData() const = 0;
     virtual bool Data(AutoBuffer& _body) = 0;
@@ -224,21 +236,21 @@ class IStreamBodyProvider {
     virtual bool Eof() const = 0;
     const char* EofData();
 
-  protected:
+ protected:
     static void AppendHeader(AutoBuffer& _body, size_t _length);
     static void AppendTail(AutoBuffer& _body);
 };
 
 class Builder {
-  public:
-    Builder(TCsMode _csmode);
+ public:
+    explicit Builder(TCsMode _csmode);
     ~Builder();
 
-  private:
+ private:
     Builder(const Builder&);
     Builder& operator=(const Builder&);
 
-  public:
+ public:
     RequestLine& Request();
     StatusLine& Status();
     const RequestLine& Request() const;
@@ -257,7 +269,7 @@ class Builder {
     bool HeaderToBuffer(AutoBuffer& _header);
     bool HttpToBuffer(AutoBuffer& _http);
 
-  private:
+ private:
     TCsMode csmode_;
 
     StatusLine statusline_;
@@ -271,34 +283,40 @@ class Builder {
 };
 
 class BodyReceiver {
-  public:
-    BodyReceiver(): total_length_(0) {}
-    virtual ~BodyReceiver() {}
+ public:
+    BodyReceiver() = default;
+    virtual ~BodyReceiver() = default;
 
-    virtual void AppendData(const void* _body, size_t _length) { total_length_ += _length;}
-    virtual void EndData() {}
-    size_t Length() const {return total_length_;}
+    virtual void AppendData(const void* /*_body*/, size_t _length) {
+        total_length_ += _length;
+    }
+    virtual void EndData() {
+    }
+    size_t Length() const {
+        return total_length_;
+    }
 
-  private:
-    size_t total_length_;
+ private:
+    size_t total_length_ = 0;
 };
 
 class MemoryBodyReceiver : public BodyReceiver {
-  public:
-	MemoryBodyReceiver(AutoBuffer& _buf)
-    : body_(_buf) {}
-    virtual void AppendData(const void* _body, size_t _length) {
+ public:
+    explicit MemoryBodyReceiver(AutoBuffer& _buf) : body_(_buf) {
+    }
+    void AppendData(const void* _body, size_t _length) override {
         BodyReceiver::AppendData(_body, _length);
         body_.Write(_body, _length);
     }
-    virtual void EndData() {}
+    void EndData() override {
+    }
 
-  private:
+ private:
     AutoBuffer& body_;
 };
 
 class Parser {
-  public:
+ public:
     enum TRecvStatus {
         kStart,
         kFirstLine,
@@ -310,16 +328,19 @@ class Parser {
         kEnd,
     };
 
-  public:
-    Parser(BodyReceiver* _body = new BodyReceiver(), bool _manage = true);
+ public:
+    explicit Parser(BodyReceiver* _body = new BodyReceiver(), bool _manage = true);
     ~Parser();
 
-  private:
+ private:
     Parser(const Parser&);
     Parser& operator=(const Parser&);
 
-  public:
-    TRecvStatus Recv(const void* _buffer, size_t _length, size_t* consumed_bytes = nullptr, bool only_parse_header = false);
+ public:
+    TRecvStatus Recv(const void* _buffer,
+                     size_t _length,
+                     size_t* consumed_bytes = nullptr,
+                     bool only_parse_header = false);
     TRecvStatus Recv(AutoBuffer& _recv_buffer);
     TRecvStatus RecvStatus() const;
 
@@ -343,10 +364,10 @@ class Parser {
     bool Error() const;
     bool Success() const;
 
-  private:
+ private:
     TRecvStatus recvstatus_;
-    AutoBuffer  recvbuf_;
-    AutoBuffer  headerbuf_;
+    AutoBuffer recvbuf_;
+    AutoBuffer headerbuf_;
     bool response_header_ready_;
     TCsMode csmode_;
 
@@ -363,6 +384,41 @@ class Parser {
 
 // void testChunk();
 
-
 } /* namespace http */
+
+class URLFactory {
+ public:
+    explicit URLFactory(std::string cgi) : cgi_(std::move(cgi)) {
+    }
+    template <class T>
+    void AddKeyValue(const std::string& key, const T& value) {
+        AddKeyValue(key, strutil::to_string(value));
+    }
+    void AddKeyValue(const std::string& key, const std::string& value);
+    std::string GetUrl() const {
+        if (kvs_.empty()) {
+            return cgi_;
+        }
+        std::string url = cgi_;
+        url += '?';
+        for (const auto& kv : kvs_) {
+            url.append(kv.first).append("=").append(kv.second).append("&");
+        }
+        url.resize(url.size() - 1);
+        return url;
+    }
+    std::string cgi_;
+    std::map<std::string, std::string> kvs_;
+};
+
+class StringBody : public http::BodyReceiver {
+ public:
+    explicit StringBody(std::string& buf) : databuf_(buf) {
+    }
+    void AppendData(const void* _body, size_t _length) override;
+
+ private:
+    std::string& databuf_;
+};
+
 #endif /* HTTPREQUEST_H_ */
